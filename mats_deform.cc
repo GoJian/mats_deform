@@ -39,8 +39,57 @@
 #include <sstream>                          // convert integers to strings
 
 #include <deal.II/base/logstream.h>         // control logging behaviors
+#include <map>
 
 using namespace dealii;
+
+
+
+// Find mesh info and output it
+template<int dim>
+void mesh_info(const Triangulation<dim> &tria,
+               const std::string        &filename)
+{
+  std::cout << "Mesh info:" << std::endl
+            << " dimension: " << dim << std::endl
+            << " no. of cells: " << tria.n_active_cells() << std::endl;
+
+  // Next loop over all faces of all cells and find how often each boundary
+  // indicator is used:
+  {
+    std::map<unsigned int, unsigned int> boundary_count;
+    typename Triangulation<dim>::active_cell_iterator
+    cell = tria.begin_active(),
+    endc = tria.end();
+    for (; cell!=endc; ++cell)
+      {
+        for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+          {
+            if (cell->face(face)->at_boundary())
+              boundary_count[cell->face(face)->boundary_indicator()]++;
+          }
+      }
+
+    std::cout << " boundary indicators: ";
+    for (std::map<unsigned int, unsigned int>::iterator it=boundary_count.begin();
+         it!=boundary_count.end();
+         ++it)
+      {
+        std::cout << it->first << "(" << it->second << " times) ";
+      }
+    std::cout << std::endl;
+  }
+
+  // Finally, produce a graphical representation of the mesh to an output file:
+  std::ofstream out (filename.c_str());
+  GridOut grid_out;
+  grid_out.write_eps (tria, out);
+  std::cout << " written to " << filename
+            << std::endl
+            << std::endl;
+}
+
+
 
 void make_rect_grid () {
 	Triangulation<3> space;                 // create an empty 3D space
@@ -52,6 +101,7 @@ void make_rect_grid () {
 	grids.write_eps (space, output_file);
 	std::cout << "Grid written to space_grid.eps" << std::endl;
 }
+
 
 
 // -- CLASS CONSTRUCTION --
@@ -100,6 +150,7 @@ void Coefficient<dim>::value_list (const std::vector<Point<dim> > &points,
         values[i] = 1;
     }
 }
+
 
 
 // -- CLASS CONSTRUCTION --
@@ -410,9 +461,18 @@ void Mats_Deform<dim>::run ()
 int main() {
     try {
     	deallog.depth_console (0);
-//    	make_rect_grid ();
-        Mats_Deform<2> laplace_problem_2d;
-        laplace_problem_2d.run ();
+
+    	Triangulation<2> triangulation;
+
+    	GridIn<2> gridin;
+    	gridin.attach_triangulation(triangulation);
+    	std::ifstream f("mats.msh");
+    	gridin.read_msh(f);
+
+    	mesh_info(triangulation, "mats_grid.eps");
+//     	  make_rect_grid ();
+//        Mats_Deform<2> laplace_problem_2d;
+//        laplace_problem_2d.run ();
 
     }
     // Error Catching Mechanisms (no need to change below)
