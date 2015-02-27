@@ -1,4 +1,4 @@
-# Install script for directory: /home/GoJian/Programs/FEM/project/mats_deform
+# Install script for directory: /home/GoJian/Programs/FEM/projects/mats_deform
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -38,7 +38,7 @@ else()
   set(CMAKE_INSTALL_MANIFEST "install_manifest.txt")
 endif()
 
-file(WRITE "/home/GoJian/Programs/FEM/project/mats_deform/${CMAKE_INSTALL_MANIFEST}" "")
+file(WRITE "/home/GoJian/Programs/FEM/projects/mats_deform/${CMAKE_INSTALL_MANIFEST}" "")
 foreach(file ${CMAKE_INSTALL_MANIFEST_FILES})
-  file(APPEND "/home/GoJian/Programs/FEM/project/mats_deform/${CMAKE_INSTALL_MANIFEST}" "${file}\n")
+  file(APPEND "/home/GoJian/Programs/FEM/projects/mats_deform/${CMAKE_INSTALL_MANIFEST}" "${file}\n")
 endforeach()
