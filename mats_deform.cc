@@ -12,40 +12,122 @@
 #include <deal.II/grid/grid_generator.h>    // standard grid generator
 #include <deal.II/grid/tria_boundary_lib.h> // boundary descriptors
 #include <deal.II/grid/grid_out.h>          // grids visualization outputs
+#include <deal.II/grid/grid_refinement.h>   // locally refine grids
+#include <deal.II/grid/grid_in.h>           // input grids from disk
+
 #include <deal.II/dofs/dof_handler.h>       // attach DOF to elements (vertices, lines, and cells)
 #include <deal.II/dofs/dof_tools.h>         // tools for manipulating degrees of freedom
 #include <deal.II/dofs/dof_renumbering.h>   // algorithm to renumber degrees of freedom
+
 #include <deal.II/fe/fe_q.h>                // bilinear finite element (Lagrange)
 #include <deal.II/fe/fe_values.h>           // used to assemble quadrature
-#include <deal.II/base/quadrature_lib.h>    // used to assemble quadrature
+#include <deal.II/fe/fe_nothing.h>
+#include <deal.II/fe/fe_system.h>
+
+#include <deal.II/hp/dof_handler.h>
+#include <deal.II/hp/fe_collection.h>
+#include <deal.II/hp/fe_values.h>
+
 #include <deal.II/base/function.h>          // boundary value treatment
+#include <deal.II/base/quadrature_lib.h>    // used to assemble quadrature
+#include <deal.II/base/logstream.h>         // control logging behaviors
+#include <deal.II/base/utilities.h>
+
 #include <deal.II/numerics/vector_tools.h>  // boundary value treatment
 #include <deal.II/numerics/matrix_tools.h>  // boundary value treatment
-#include <deal.II/lac/sparse_matrix.h>
-#include <deal.II/lac/compressed_sparsity_pattern.h>
+#include <deal.II/numerics/data_out.h>      // data output
+#include <deal.II/numerics/error_estimator.h>
+
 #include <deal.II/lac/vector.h>             // tool for solvers
 #include <deal.II/lac/full_matrix.h>        // tool for solvers
 #include <deal.II/lac/solver_cg.h>          // Conjugate Gradient solver
 #include <deal.II/lac/precondition.h>       // CG solver preconditioner
 #include <deal.II/lac/constraint_matrix.h>  // Adaptive mesh
-#include <deal.II/grid/grid_refinement.h>   // locally refine grids
-#include <deal.II/numerics/error_estimator.h>
+#include <deal.II/lac/sparse_matrix.h>
+#include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/constraint_matrix.h>
+#include <deal.II/lac/compressed_sparsity_pattern.h>
 
-#include <deal.II/grid/grid_in.h>           // input grids from disk
-#include <deal.II/numerics/data_out.h>      // data output
 #include <iostream>                         // c++ IO
 #include <fstream>                          // c++ file output
 #include <cmath>                            // c math functions
 #include <sstream>                          // convert integers to strings
-
-#include <deal.II/base/logstream.h>         // control logging behaviors
 #include <map>
 
 using namespace dealii;
 
-namespace mats_deform
+namespace Mesh_Tools
+{
+  // FUNCTION: Display and output mesh info
+  template<int dim>
+  void mesh_info(const Triangulation<dim> &tria,
+                 const std::string        &filename)
+  {
+    using namespace dealii;
+
+    std::cout << "Mesh info:" << std::endl
+              << " dimension: " << dim << std::endl
+              << " no. of cells: " << tria.n_active_cells() << std::endl;
+
+    // Next loop over all faces of all cells and find how often each boundary
+    // indicator is used:
+    {
+      std::map<unsigned int, unsigned int> boundary_member;
+      typename Triangulation<dim>::active_cell_iterator
+        cell = tria.begin_active(),
+        endcell = tria.end();
+      for (; cell!=endcell; ++cell)
+      {
+        for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
+        {
+          if ( cell->face(face)->at_boundary() )
+            boundary_member[cell->face(face)->boundary_indicator()]++;
+        }
+      }
+
+      std::cout << " boundary indicators: ";
+      for (std::map<unsigned int, unsigned int>::iterator it=boundary_member.begin();
+           it!=boundary_member.end();
+           ++it)
+        {
+          std::cout << it->first << "(" << it->second << " times) ";
+        }
+      std::cout << std::endl;
+
+      std::map<unsigned int, unsigned int> material_member;
+      cell = tria.begin_active();
+      for (; cell!=endcell; ++cell)
+      {
+        if ( cell->material_id() != 0 )
+          material_member[cell->material_id()]++;
+      }
+
+      std::cout << " material indicators: ";
+      for (std::map<unsigned int, unsigned int>::iterator it=material_member.begin();
+           it!=material_member.end();
+           ++it)
+        {
+          std::cout << it->first << "(" << it->second << " times) ";
+        }
+      std::cout << std::endl;
+    }
+
+    // Finally, produce a graphical representation of the mesh to an output file:
+    std::ofstream out (filename.c_str());
+    GridOut grid_out;
+    grid_out.write_eps (tria, out);
+    std::cout << " mesh visualization saved to: " << filename
+              << std::endl
+              << std::endl;
+  }
+}
+
+
+
+namespace Mats_Deform
 {
   using namespace dealii;
+  using namespace Mesh_Tools;
 
   // -- CLASS definition
   template <int dim>
@@ -122,32 +204,23 @@ namespace mats_deform
   template <int dim>
   double
     StokesBoundaryValues<dim>::value (const Point<dim>  &p,
-                                           const unsigned int component) const
+                                      const unsigned int component) const
   {
     Assert (component < this->n_components,
             ExcIndexRange (component, 0, this->n_components));
 
-    switch (component)
-    {
-    case 14:      // LEFT
+    if (component == 0)
       return 1;
-    case 15:      // BOTTOM
+    else
       return 0;
-    case 16:      // RIGHT
-          return 1;
-    case 17:      // TOP
-          return 1;
-    default:
-      Assert (false, ExcNotImplemented());
-    }
   }
 
   template <int dim>
   void
     StokesBoundaryValues<dim>::vector_value (const Point<dim> &p,
-                                           Vector<double>   &values) const
+                                             Vector<double>   &values) const
   {
-    for (unsigned int c=0; c<this->n_components; ++c)
+    for (unsigned int c=0; c < this->n_components; ++c)
       values(c) = StokesBoundaryValues<dim>::value (p, c);
   }
 
@@ -225,8 +298,6 @@ namespace mats_deform
   void
   FluidStructureProblem<dim>::make_grid ()
   {
-    Triangulation<2> triangulation;
-
     GridIn<2> gridin;
     gridin.attach_triangulation(triangulation);
     std::ifstream f("mats.msh");
@@ -234,14 +305,16 @@ namespace mats_deform
 
     mesh_info(triangulation, "mats_grid_2d.eps");
 
-    // Setting Material ID
-    for (typename Triangulation<dim>::active_cell_iterator
+    // Setting Material IDs
+    for (typename hp::DoFHandler<dim>::active_cell_iterator
          cell = dof_handler.begin_active();
          cell != dof_handler.end(); ++cell)
-      if ( cell->material_id() == 11 )
+      if ( cell->material_id() == 18 )
         cell->set_material_id (fluid_domain_id);
-      else if ( cell->material_id() == 13 )
+      else if ( cell->material_id() == 19 )
         cell->set_material_id (solid_domain_id);
+      else
+        Assert (false, ExcNotImplemented());
   }
 
   template <int dim>
@@ -251,14 +324,12 @@ namespace mats_deform
     for (typename hp::DoFHandler<dim>::active_cell_iterator
          cell = dof_handler.begin_active();
          cell != dof_handler.end(); ++cell)
-      {
-        if (cell_is_in_fluid_domain(cell))
-          cell->set_active_fe_index (0);
-        else if (cell_is_in_solid_domain(cell))
-          cell->set_active_fe_index (1);
-        else
-          Assert (false, ExcNotImplemented());
-      }
+      if ( cell_is_in_fluid_domain(cell) )
+        cell->set_active_fe_index (0);
+      else if ( cell_is_in_solid_domain(cell) )
+        cell->set_active_fe_index (1);
+      else
+        Assert (false, ExcNotImplemented());
   }
 
   template <int dim>
@@ -274,15 +345,41 @@ namespace mats_deform
                                                constraints);
 
       const FEValuesExtractors::Vector velocities(0);
+      // LEFT
       VectorTools::interpolate_boundary_values (dof_handler,
-                                                1,
+                                                14,
+                                                StokesBoundaryValues<dim>(),
+                                                constraints,
+                                                fe_collection.component_mask(velocities));
+      // BOTTOM
+      VectorTools::interpolate_boundary_values (dof_handler,
+                                                15,
+                                                StokesBoundaryValues<dim>(),
+                                                constraints,
+                                                fe_collection.component_mask(velocities));
+      // RIGHT
+      VectorTools::interpolate_boundary_values (dof_handler,
+                                                16,
+                                                StokesBoundaryValues<dim>(),
+                                                constraints,
+                                                fe_collection.component_mask(velocities));
+      // TOP
+      VectorTools::interpolate_boundary_values (dof_handler,
+                                                17,
                                                 StokesBoundaryValues<dim>(),
                                                 constraints,
                                                 fe_collection.component_mask(velocities));
 
       const FEValuesExtractors::Vector displacements(dim+1);
+      // INTERFACE
       VectorTools::interpolate_boundary_values (dof_handler,
                                                 0,
+                                                ZeroFunction<dim>(dim+1+dim),
+                                                constraints,
+                                                fe_collection.component_mask(displacements));
+      // BOTTOM
+      VectorTools::interpolate_boundary_values (dof_handler,
+                                                15,
                                                 ZeroFunction<dim>(dim+1+dim),
                                                 constraints,
                                                 fe_collection.component_mask(displacements));
@@ -906,9 +1003,10 @@ namespace mats_deform
 
 
 
-namespace mats_grow
+namespace Mats_Grow
 {
   using namespace dealii;
+  using namespace Mesh_Tools;
 
   // -- HELPER CLASS definition
   template <int dim>
@@ -1209,7 +1307,7 @@ namespace mats_grow
   template <int dim>
   void DiffusionProblem<dim>::run ()
   {
-    for (unsigned int cycle=0; cycle<8; ++cycle)
+    for (unsigned int cycle=0; cycle<4; ++cycle)
       {
         std::cout << "Cycle " << cycle << ':' << std::endl;
 
@@ -1263,87 +1361,44 @@ namespace mats_grow
 
 
 
-// FUNCTION: Display and output mesh info
-template<int dim>
-void mesh_info(const Triangulation<dim> &tria,
-               const std::string        &filename)
+// -- MAIN --
+int main()
 {
-  using namespace dealii;
-
-  std::cout << "Mesh info:" << std::endl
-            << " dimension: " << dim << std::endl
-            << " no. of cells: " << tria.n_active_cells() << std::endl;
-
-  // Next loop over all faces of all cells and find how often each boundary
-  // indicator is used:
+  try
   {
-    std::map<unsigned int, unsigned int> boundary_count;
-    typename Triangulation<dim>::active_cell_iterator
-    cell = tria.begin_active(),
-    endc = tria.end();
-    for (; cell!=endc; ++cell)
-    {
-      for (unsigned int face=0; face<GeometryInfo<dim>::faces_per_cell; ++face)
-      {
-        if (cell->face(face)->at_boundary())
-          boundary_count[cell->face(face)->boundary_indicator()]++;
-      }
-      if ( cell->material_id() == 'mats' )
-        a=5;
-    }
+    deallog.depth_console (0);
 
-    std::cout << " boundary indicators: ";
-    for (std::map<unsigned int, unsigned int>::iterator it=boundary_count.begin();
-         it!=boundary_count.end();
-         ++it)
-      {
-        std::cout << it->first << "(" << it->second << " times) ";
-      }
-    std::cout << std::endl;
+    Mats_Deform::FluidStructureProblem<2> mats_deform(1, 1);
+    mats_deform.run ();
+
   }
 
-  // Finally, produce a graphical representation of the mesh to an output file:
-  std::ofstream out (filename.c_str());
-  GridOut grid_out;
-  grid_out.write_eps (tria, out);
-  std::cout << " mesh visualization saved to: " << filename
-            << std::endl
-            << std::endl;
-}
+  // Error Catching Mechanisms (no need to change below)
+  catch (std::exception &exc)
+	{
+    std::cerr << std::endl << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    std::cerr << "Exception on processing: " << std::endl
+              << exc.what() << std::endl
+              << "Aborting!" << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
 
-
-
-// -- MAIN --
-int main() {
-    try {
-    	deallog.depth_console (0);
-
-
-
-    }
-    // Error Catching Mechanisms (no need to change below)
-	catch (std::exception &exc)
-	    {
-	    std::cerr << std::endl << std::endl
-	              << "----------------------------------------------------"
-	              << std::endl;
-	    std::cerr << "Exception on processing: " << std::endl
-	              << exc.what() << std::endl
-	              << "Aborting!" << std::endl
-	              << "----------------------------------------------------"
-	              << std::endl;
-
-	    return 1;
-	  }
-	catch (...) {
-	    std::cerr << std::endl << std::endl
-	              << "----------------------------------------------------"
-	              << std::endl;
-	    std::cerr << "Unknown exception!" << std::endl
-	              << "Aborting!" << std::endl
-	              << "----------------------------------------------------"
-	              << std::endl;
-	    return 1;
+    return 1;
 	}
+
+	catch (...)
+	{
+    std::cerr << std::endl << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    std::cerr << "Unknown exception!" << std::endl
+              << "Aborting!" << std::endl
+              << "----------------------------------------------------"
+              << std::endl;
+    return 1;
+	}
+
 	return 0;
 }
