@@ -309,9 +309,9 @@ namespace Mats_Deform
     for (typename hp::DoFHandler<dim>::active_cell_iterator
          cell = dof_handler.begin_active();
          cell != dof_handler.end(); ++cell)
-      if ( cell->material_id() == 18 )
+      if ( cell->material_id() == 20 )
         cell->set_material_id (fluid_domain_id);
-      else if ( cell->material_id() == 19 )
+      else if ( cell->material_id() == 21 )
         cell->set_material_id (solid_domain_id);
       else
         Assert (false, ExcNotImplemented());
@@ -345,41 +345,53 @@ namespace Mats_Deform
                                                constraints);
 
       const FEValuesExtractors::Vector velocities(0);
-      // LEFT
+
+      // Boundary Conditions (from Gmsh)
+      // Physical Line(14) = {1};     // Left Fluid
+      // Physical Line(15) = {2};     // Left Solid
+      // Physical Line(16) = {6};     // Bottom
+      // Physical Line(17) = {4};     // Right Fluid
+      // Physical Line(18) = {5};     // Right Solid
+      // Physical Line(19) = {3};     // Top
+      // Physical Surface(20) = {11}; // Fluid Domain
+      // Physical Surface(21) = {13}; // Solid Domain
+
+      // LEFT Fluid
       VectorTools::interpolate_boundary_values (dof_handler,
                                                 14,
                                                 StokesBoundaryValues<dim>(),
                                                 constraints,
                                                 fe_collection.component_mask(velocities));
-      // BOTTOM
-      VectorTools::interpolate_boundary_values (dof_handler,
-                                                15,
-                                                StokesBoundaryValues<dim>(),
-                                                constraints,
-                                                fe_collection.component_mask(velocities));
-      // RIGHT
-      VectorTools::interpolate_boundary_values (dof_handler,
-                                                16,
-                                                StokesBoundaryValues<dim>(),
-                                                constraints,
-                                                fe_collection.component_mask(velocities));
-      // TOP
+
+      // RIGHT Fluid
       VectorTools::interpolate_boundary_values (dof_handler,
                                                 17,
                                                 StokesBoundaryValues<dim>(),
                                                 constraints,
                                                 fe_collection.component_mask(velocities));
+      // TOP
+//      VectorTools::interpolate_boundary_values (dof_handler,
+//                                                19,
+//                                                ZeroFunction<dim>(dim+1+dim),
+//                                                constraints,
+//                                                fe_collection.component_mask(velocities));
 
       const FEValuesExtractors::Vector displacements(dim+1);
-      // INTERFACE
+      // LEFT Solid
       VectorTools::interpolate_boundary_values (dof_handler,
-                                                0,
+                                                15,
                                                 ZeroFunction<dim>(dim+1+dim),
                                                 constraints,
                                                 fe_collection.component_mask(displacements));
-      // BOTTOM
+      // RIGHT Solid
       VectorTools::interpolate_boundary_values (dof_handler,
-                                                15,
+                                                18,
+                                                ZeroFunction<dim>(dim+1+dim),
+                                                constraints,
+                                                fe_collection.component_mask(displacements));
+      // BOTTOM Solid
+      VectorTools::interpolate_boundary_values (dof_handler,
+                                                16,
                                                 ZeroFunction<dim>(dim+1+dim),
                                                 constraints,
                                                 fe_collection.component_mask(displacements));
@@ -977,7 +989,7 @@ namespace Mats_Deform
   {
     make_grid ();
 
-    for (unsigned int refinement_cycle = 0; refinement_cycle<10-2*dim;
+    for (unsigned int refinement_cycle = 0; refinement_cycle<=7-2*dim;
         ++refinement_cycle)
     {
       std::cout << "Refinement cycle " << refinement_cycle << std::endl;
@@ -996,6 +1008,7 @@ namespace Mats_Deform
       std::cout << "   Writing output..." << std::endl;
       output_results (refinement_cycle);
 
+      std::cout << "   Done..." << std::endl;
       std::cout << std::endl;
     }
   }

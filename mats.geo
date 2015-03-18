@@ -29,8 +29,6 @@ Physical Line(16) = {6};     // Bottom
 Physical Line(17) = {4};     // Right Fluid
 Physical Line(18) = {5};     // Right Solid
 Physical Line(19) = {3};     // Top
-Physical Line(20) = {7};     // Base Left
-Physical Line(21) = {8};     // Base Right
 Physical Surface(20) = {11}; // Fluid Domain
 Physical Surface(21) = {13}; // Solid Domain
 
